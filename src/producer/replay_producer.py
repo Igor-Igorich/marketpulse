@@ -1,8 +1,7 @@
+import argparse
 import asyncio
 import json
 import logging
-import sys
-import time
 from datetime import datetime
 
 import aiohttp
@@ -17,6 +16,7 @@ CANDLES_URL_TEMPLATE = (
     "/securities/{ticker}/candles.json?interval=1&from={date_from}&till={date_till}"
 )
 MOEX_CANDLES_PAGE_SIZE = 500
+BULK_SEND_BATCH_SIZE = 50
 CANDLE_COLUMNS = [
     "open",
     "close",
@@ -64,20 +64,15 @@ def candle_to_trade(ticker: str, board: str, row: list) -> dict:
     }
 
 
-async def replay_ticker(
+async def fetch_all_candles(
     session: aiohttp.ClientSession,
-    producer: AIOKafkaProducer,
     ticker: str,
     board: str,
-    topic: str,
     date_from: str,
     date_till: str,
-    speed_seconds_per_candle: float,
-) -> None:
-
+) -> list[list]:
+    all_rows = []
     start = 0
-    total_cnt = 0
-
     while True:
         url = (
             CANDLES_URL_TEMPLATE.format(
@@ -91,35 +86,62 @@ async def replay_ticker(
 
         async with session.get(url) as resp:
             resp.raise_for_status()
-            data = await resp.json()
+            data = resp.json()
 
         rows = data["candles"]["data"]
         if not rows:
             break
-
-        total_cnt += len(rows)
-
-        for row in rows:
-            trade = candle_to_trade(ticker, board, row)
-            await producer.send(
-                topic,
-                key=trade["ticker"].encode("utf-8"),
-                value=json.dumps(trade).encode("utf-8"),
-            )
-            if speed_seconds_per_candle > 0:
-                await asyncio.sleep(speed_seconds_per_candle)
-
+        all_rows.extend(rows)
         if len(rows) < MOEX_CANDLES_PAGE_SIZE:
             break
         start += MOEX_CANDLES_PAGE_SIZE
 
+    return all_rows
+
+
+async def replay_ticker(
+    session: aiohttp.ClientSession,
+    producer: AIOKafkaProducer,
+    ticker: str,
+    board: str,
+    topic: str,
+    date_from: str,
+    date_till: str,
+    speed_seconds_per_candle: float,
+) -> None:
+    rows = fetch_all_candles(session, ticker, board, date_from, date_till)
+    trades = [candle_to_trade(ticker, board, row) for row in rows]
     logger.info(
         "Реплей %s: %d свечей за %s..%s",
         ticker,
-        total_cnt,
+        len(trades),
         date_from,
         date_till,
     )
+    if speed_seconds_per_candle > 0:
+        # Демо-темп: одно сообщение за раз, с реальной паузой — для наглядного
+        # "живого" вида при показе, не для массовой заливки.
+        for trade in trades:
+            await producer.send_and_wait(
+                topic,
+                key=trade["ticker"].encode("utf-8"),
+                value=json.dumps(trade).encode("utf-8"),
+            )
+            await asyncio.sleep(speed_seconds_per_candle)
+    else:
+        # Быстрая: пачки по BULK_SEND_BATCH_SIZE отправляются параллельно.
+        for i in range(0, len(trades), BULK_SEND_BATCH_SIZE):
+            batch = trades[i : i + BULK_SEND_BATCH_SIZE]
+            await asyncio.gather(
+                *[
+                    producer.send_and_wait(
+                        topic,
+                        key=trade["ticker"].encode("utf-8"),
+                        value=json.dumps(trade).encode("utf-8"),
+                    )
+                    for trade in batch
+                ]
+            )
 
 
 async def run_replay(
@@ -153,12 +175,25 @@ async def run_replay(
 
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(
+        description="Реплей исторических свечей MOEX в Kafka"
+    )
+    parser.add_argument("date_from", nargs="?", default="2026-09-15")
+    parser.add_argument("date_till", nargs="?", default=None)
+    parser.add_argument(
+        "--speed",
+        type=float,
+        default=0.0,
+        help="Пауза между свечами в секундах (0 = быстрая заливка; >0 = демо-темп)",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO)
-    date_from = sys.argv[1] if len(sys.argv) > 1 else "2026-09-15"
-    date_till = sys.argv[2] if len(sys.argv) > 2 else date_from
-    # speed=0 -> залить всё максимально быстро (для тестов/наполнения БД)
-    # speed>0 -> "проигрывать" с задержкой для наглядного демо
-    start_time = time.perf_counter()
-    asyncio.run(run_replay(date_from, date_till, speed_seconds_per_candle=0.3))
-    end_time = time.perf_counter()
-    print(f"Время выполнения: {end_time - start_time:.2f} сек")
+    asyncio.run(
+        run_replay(
+            args.date_from,
+            args.date_till or args.date_from,
+            speed_seconds_per_candle=args.speed,
+        )
+    )
