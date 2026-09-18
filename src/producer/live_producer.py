@@ -116,6 +116,10 @@ async def run_live_producer() -> None:
                     ]
                 )
                 await asyncio.sleep(settings.MOEX_POLL_INTERVAL_SECONDS)
+    # Осознанное упрощение: реальный период между стартами цикла = время работы +
+    # interval, а не строго interval. Для текущих объёмов это не критично.
+    # Если понадобится строгая периодичность — считать дедлайны через loop.time(),
+    # см. docs/moex_api_findings.md.
     finally:
         await producer.stop()
 
