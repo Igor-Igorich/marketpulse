@@ -71,7 +71,7 @@ async def fetch_all_candles(
     date_from: str,
     date_till: str,
 ) -> list[list]:
-    all_rows = []
+    all_rows: list[list] = []
     start = 0
     while True:
         url = (
@@ -83,11 +83,9 @@ async def fetch_all_candles(
             )
             + f"&start={start}"
         )
-
         async with session.get(url) as resp:
             resp.raise_for_status()
-            data = resp.json()
-
+            data = await resp.json()
         rows = data["candles"]["data"]
         if not rows:
             break
@@ -95,7 +93,6 @@ async def fetch_all_candles(
         if len(rows) < MOEX_CANDLES_PAGE_SIZE:
             break
         start += MOEX_CANDLES_PAGE_SIZE
-
     return all_rows
 
 
@@ -109,7 +106,7 @@ async def replay_ticker(
     date_till: str,
     speed_seconds_per_candle: float,
 ) -> None:
-    rows = fetch_all_candles(session, ticker, board, date_from, date_till)
+    rows = await fetch_all_candles(session, ticker, board, date_from, date_till)
     trades = [candle_to_trade(ticker, board, row) for row in rows]
     logger.info(
         "Реплей %s: %d свечей за %s..%s",
@@ -118,6 +115,7 @@ async def replay_ticker(
         date_from,
         date_till,
     )
+
     if speed_seconds_per_candle > 0:
         # Демо-темп: одно сообщение за раз, с реальной паузой — для наглядного
         # "живого" вида при показе, не для массовой заливки.

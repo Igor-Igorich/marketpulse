@@ -7,7 +7,7 @@ CREATE TABLE trades(
     price           NUMERIC(18, 4) NOT NULL,
     quantity        BIGINT NOT NULL,
     value           NUMERIC(20, 4) NOT NULL,
-    side            CHAR(1) NOT NULL,             -- 'B' или 'S'
+    side            VARCHAR(4) NOT NULL,          -- 'buy' или 'sell'
     source          VARCHAR(10) NOT NULL DEFAULT 'live',   -- 'live' | 'replay'
     ingested_at     TIMESTAMP NOT NULL DEFAULT NOW(),      -- когда наш consumer записал строку
 
