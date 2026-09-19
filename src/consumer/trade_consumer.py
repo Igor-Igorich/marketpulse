@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from src.config import get_settings
 from src.consumer.schemas import TradeMessage
+from src.consumer.volatility_refresher import refresh_volatility_loop
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ async def run_consumer() -> None:
         max_size=10,
     )
     await ensure_partitions(pool)
+    refresher_task = asyncio.create_task(refresh_volatility_loop(pool))
 
     consumer = AIOKafkaConsumer(
         settings.KAFKA_TOPIC_RAW_TRADES,
@@ -86,6 +88,7 @@ async def run_consumer() -> None:
         async for msg in consumer:
             await handle_message(pool, msg.value)
     finally:
+        refresher_task.cancel()
         await consumer.stop()
         await pool.close()
 
