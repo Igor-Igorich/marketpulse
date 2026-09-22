@@ -25,10 +25,11 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MarketPulse API", lifespan=lifespan)
 
-from src.api.routers import ticks, volatility  # noqa: E402
+from src.api.routers import stream, ticks, volatility  # noqa: E402
 
 app.include_router(ticks.router, tags=["ticks"])
 app.include_router(volatility.router, tags=["volatility"])
+app.include_router(stream.router, tags=["stream"])
 
 
 @app.get("/")
