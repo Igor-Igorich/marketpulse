@@ -4,3 +4,4 @@
 import asyncpg
 
 pool: asyncpg.Pool | None = None
+models: dict[str, dict] = {}
