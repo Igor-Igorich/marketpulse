@@ -140,3 +140,18 @@ asyncio.sleep_until (такой функции нет в стандартной 
 
 start шагает по 500 записей за раз, подтверждено на полном торговом дне
 (500 + 500 + 9 = 1009 свечей). Нужен цикл постраничного сбора.
+
+---
+
+# Kafka: KAFKA_CONTROLLER_QUORUM_VOTERS должен совпадать с адресацией
+
+# INTERNAL-listener'а, а не с EXTERNAL
+
+При введении раздельных INTERNAL/EXTERNAL listener'ов забыл
+пересмотреть CONTROLLER_QUORUM_VOTERS. Он остался на localhost, а
+INTERNAL-listener стал kafka:19092. Симптом — бесконечный цикл
+"Discovered coordinator -> Marking the coordinator dead" у consumer group.
+Правило на будущее: при добавлении EXTERNAL-listener'а все поля,
+описывающие "внутреннюю" идентичность ноды (quorum voters,
+inter-broker listener), должны использовать тот же адрес, что и
+INTERNAL-listener, а не localhost.

@@ -1,9 +1,11 @@
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env")
+
     MOEX_BOARD: str = "TQBR"
     MOEX_TICKERS: str = "SBER,GAZP,LKOH"
     MOEX_POLL_INTERVAL_SECONDS: int = 5
@@ -22,9 +24,6 @@ class Settings(BaseSettings):
         """MOEX_TICKERS хранится строкой через запятую в .env (простой
         текстовый формат), но по коду удобнее работать со списком."""
         return [t.strip() for t in self.MOEX_TICKERS.split(",")]
-
-    class Config:
-        env_file = ".env"
 
 
 @lru_cache()
